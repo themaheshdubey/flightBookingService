@@ -4,47 +4,26 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const FLIGHT_SERVICE_PATH = process.env.FLIGHT_SERVICE_PATH;
 const USER_SERVICE_PATH = process.env.USER_SERVICE_PATH;
-const JWT_KEY = process.env.JWT_KEY;
 
 class BookingService {
     constructor() {
         this.bookingRepository = new BookingRepository();
     }
 
-    async isAuthenticated(token) {
-        try {
-            const response = this.verifyToken(token);
-            if (!response) {
-                throw new Error('Invalid token');
-            }
-            const apiLink = `${USER_SERVICE_PATH}/api/v1/user/${response.id}`;
-            const userResponse = await axios.get(apiLink);
-            const user = userResponse.data.data;
-            if (!user) {
-                throw new Error('No user with the corresponding token exists');
-            }
-            return user.id;
-        } catch (error) {
-            console.error("Something went wrong in the auth process", error);
-            throw error;
-        }
-    }
-
-    verifyToken(token) {
-        try {
-            const response = jwt.verify(token, JWT_KEY);
-            return response;
-        } catch (error) {
-            console.error("Something went wrong in token validation", error);
-            throw error;
-        }
-    }
-
     async createBooking(data, token) {
         try {
-            // 1. Authenticate the user
-            const userId = await this.isAuthenticated(token);
+            
+            //1. Check authentication from token from user microservice
+            const checkIsAuthenticatedURL = `${USER_SERVICE_PATH}/api/v1/auth/validate`;
 
+            const isValidUser = await axios.get(checkIsAuthenticatedURL, {
+                headers: {
+                    'x-access-token': token
+                }
+            });
+
+            const userId = isValidUser.data.data;
+                        
             // 2. Check flight availability
             const flightId = data.flightId;
             const getFlightRequestURL = `${FLIGHT_SERVICE_PATH}/api/v1/flight/${flightId}`;
