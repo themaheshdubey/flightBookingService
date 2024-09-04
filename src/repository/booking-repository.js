@@ -26,6 +26,18 @@ class BookingRepository {
         }
     }
 
+    async getById(bookingId) {
+        try {
+            const booking = await Booking.findByPk(bookingId);
+            if(!booking) {
+                throw new Error('Booking not valid');
+            }
+            return booking;
+        } catch (error) {
+            throw error;
+        }
+    }
+
 }
 
 

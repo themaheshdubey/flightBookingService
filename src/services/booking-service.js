@@ -1,6 +1,5 @@
 const BookingRepository = require('../repository/booking-repository');
 const axios = require('axios');
-const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const FLIGHT_SERVICE_PATH = process.env.FLIGHT_SERVICE_PATH;
 const USER_SERVICE_PATH = process.env.USER_SERVICE_PATH;
@@ -10,19 +9,20 @@ class BookingService {
         this.bookingRepository = new BookingRepository();
     }
 
+    async validateUser(token) {
+        const checkIsAuthenticatedURL = `${USER_SERVICE_PATH}/api/v1/auth/validate`;
+        const isValidUser = await axios.get(checkIsAuthenticatedURL, {
+            headers: { 'x-access-token': token }
+        });
+        return isValidUser.data.data;
+    }
+    
+
     async createBooking(data, token) {
         try {
             
             //1. Check authentication from token from user microservice
-            const checkIsAuthenticatedURL = `${USER_SERVICE_PATH}/api/v1/auth/validate`;
-
-            const isValidUser = await axios.get(checkIsAuthenticatedURL, {
-                headers: {
-                    'x-access-token': token
-                }
-            });
-
-            const userId = isValidUser.data.data;
+            const userId = await this.validateUser(token);
                         
             // 2. Check flight availability
             const flightId = data.flightId;
@@ -54,6 +54,45 @@ class BookingService {
             console.error('Something went wrong in the booking process', error);
             throw error;
         }
+    }
+
+
+    async cancelBooking(bookingId , token) {
+        try {
+
+            //1. Check authentication from token from user microservice
+            const tokenUserId = await this.validateUser(token);
+
+            //check if bookingId exist
+            const booking = await this.bookingRepository.getById(bookingId);
+            const bookingUserId = booking.userId;
+
+            //compare bookingId userId and compare tokenUserId
+            if(bookingUserId !== tokenUserId) {
+                return new Error('Not authorized user');
+            }
+
+            //check if already cancelled
+            if(booking.bookingStatus === "Cancelled") {
+                return new Error('Already this booking is cancelled');
+            }
+
+            // Cancel booking
+            const finalBooking = await this.bookingRepository.update(booking.id, { status: "Cancelled" });
+
+            // Update flight seats
+            const getFlightRequestURL = `${FLIGHT_SERVICE_PATH}/api/v1/flight/${booking.flightId}`;
+            const flightData = await axios.get(getFlightRequestURL);
+            const updateFlightRequestURL = `${FLIGHT_SERVICE_PATH}/api/v1/flight/${booking.flightId}`;
+            await axios.patch(updateFlightRequestURL, { totalSeats: flightData.data.data.totalSeats + booking.numberOfSeat });
+            
+            return finalBooking;
+        }
+         catch (error) {
+            console.error('Something went wrong in the booking cancel process', error);
+            throw error;
+        }
+
     }
 }
 
