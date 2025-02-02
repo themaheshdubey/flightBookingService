@@ -1,3 +1,4 @@
+const { sequelize , Booking } = require('../models');
 const BookingRepository = require('../repository/booking-repository');
 const axios = require('axios');
 require('dotenv').config();
@@ -16,9 +17,11 @@ class BookingService {
         });
         return isValidUser.data.data;
     }
-    
 
     async createBooking(data, token) {
+
+        const transaction = await sequelize.transaction(); //  Start a transaction
+
         try {
             
             //1. Check authentication from token from user microservice
@@ -30,6 +33,19 @@ class BookingService {
             const response = await axios.get(getFlightRequestURL);
             const flightData = response.data.data;
 
+
+            // Lock the row so no other transaction can modify it concurrently
+            const lockedFlight = await sequelize.models.Booking.findOne({
+                where: { id: flightId },
+                lock: transaction.LOCK.UPDATE,
+                transaction, 
+            });
+
+            if (!lockedFlight) {
+                throw new Error('Flight not found');
+            }
+
+
             // 3. Check if seats are available
             if (data.numberOfSeat > flightData.totalSeats) {
                 console.error('Insufficient seats in the flight');
@@ -39,7 +55,7 @@ class BookingService {
             // 4. Calculate total cost and create booking
             const totalCost = flightData.price * data.numberOfSeat;
             const bookingPayload = { ...data, totalCost, userId };
-            const booking = await this.bookingRepository.create(bookingPayload);
+            const booking = await this.bookingRepository.create(bookingPayload , transaction);
 
             // 5. Update flight seats
             const updateFlightRequestURL = `${FLIGHT_SERVICE_PATH}/api/v1/flight/${booking.flightId}`;
@@ -48,9 +64,16 @@ class BookingService {
             // 6. Finalize booking
             const finalBooking = await this.bookingRepository.update(booking.id, { status: "Booked" });
 
+            // //7. Now store this booking record in mailentry table. For that fetch user data from other service
+            // const getUserDetailURL = `${USER_SERVICE_PATH}/api/v1/user/${userId}`;
+            // const userResponse = await axios.get(getUserDetailURL);
+            // const recepientMail = userResponse.data.email;         
+
+            await transaction.commit(); //Commit the transaction
             return finalBooking;
 
         } catch (error) {
+            await transaction.rollback(); //Rollback in case of failure
             console.error('Something went wrong in the booking process', error);
             throw error;
         }
