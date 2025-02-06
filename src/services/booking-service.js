@@ -5,6 +5,8 @@ require('dotenv').config();
 const FLIGHT_SERVICE_PATH = process.env.FLIGHT_SERVICE_PATH;
 const USER_SERVICE_PATH = process.env.USER_SERVICE_PATH;
 const NOTIFICATION_SERVICE_PATH = process.env.NOTIFICATION_SERVICE_PATH;
+const rabbitmqPublisher = require('../rabbitMqPublisher');
+
 
 class BookingService {
     constructor() {
@@ -67,19 +69,29 @@ class BookingService {
             const finalBooking = await this.bookingRepository.update(booking.id, { status: "Booked" });
 
 
-            //7. Now store this booking record in notificationTicket table. For that fetch user data from other service
+             //7. Now store this booking record in notificationTicket table. For that fetch user data from other service
 
             const getUserDetailURL = `${USER_SERVICE_PATH}/api/v1/user/${userId}`;
             const userResponse = await axios.get(getUserDetailURL);
             const recepientMail = userResponse.data.data.email;
 
-            const notificationPayload = {
+            // const notificationPayload = {
+            //     flightId: booking.flightId,
+            //     userEmail: recepientMail
+            // };
+
+            // const sendNotificationURL = `${NOTIFICATION_SERVICE_PATH}/api/v1/createTicket`;
+            // await axios.post(sendNotificationURL, notificationPayload);
+
+
+            // We will store this rabbitmq. we wont do api call. After successful booking, send message to RabbitMQ
+            const ticketMessage = {
                 flightId: booking.flightId,
                 userEmail: recepientMail
             };
 
-            const sendNotificationURL = `${NOTIFICATION_SERVICE_PATH}/api/v1/createTicket`;
-            await axios.post(sendNotificationURL, notificationPayload);
+            await rabbitmqPublisher.publishMessage(ticketMessage);
+
 
             await transaction.commit(); //Commit the transaction
             return finalBooking;
