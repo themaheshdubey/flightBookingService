@@ -4,6 +4,7 @@ const axios = require('axios');
 require('dotenv').config();
 const FLIGHT_SERVICE_PATH = process.env.FLIGHT_SERVICE_PATH;
 const USER_SERVICE_PATH = process.env.USER_SERVICE_PATH;
+const NOTIFICATION_SERVICE_PATH = process.env.NOTIFICATION_SERVICE_PATH;
 
 class BookingService {
     constructor() {
@@ -56,6 +57,7 @@ class BookingService {
             const totalCost = flightData.price * data.numberOfSeat;
             const bookingPayload = { ...data, totalCost, userId };
             const booking = await this.bookingRepository.create(bookingPayload , transaction);
+            console.log(booking);
 
             // 5. Update flight seats
             const updateFlightRequestURL = `${FLIGHT_SERVICE_PATH}/api/v1/flight/${booking.flightId}`;
@@ -64,10 +66,20 @@ class BookingService {
             // 6. Finalize booking
             const finalBooking = await this.bookingRepository.update(booking.id, { status: "Booked" });
 
-            // //7. Now store this booking record in mailentry table. For that fetch user data from other service
-            // const getUserDetailURL = `${USER_SERVICE_PATH}/api/v1/user/${userId}`;
-            // const userResponse = await axios.get(getUserDetailURL);
-            // const recepientMail = userResponse.data.email;         
+
+            //7. Now store this booking record in notificationTicket table. For that fetch user data from other service
+
+            const getUserDetailURL = `${USER_SERVICE_PATH}/api/v1/user/${userId}`;
+            const userResponse = await axios.get(getUserDetailURL);
+            const recepientMail = userResponse.data.data.email;
+
+            const notificationPayload = {
+                flightId: booking.flightId,
+                userEmail: recepientMail
+            };
+
+            const sendNotificationURL = `${NOTIFICATION_SERVICE_PATH}/api/v1/createTicket`;
+            await axios.post(sendNotificationURL, notificationPayload);
 
             await transaction.commit(); //Commit the transaction
             return finalBooking;
